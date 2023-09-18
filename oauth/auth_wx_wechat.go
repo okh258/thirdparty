@@ -1,7 +1,9 @@
 package oauth
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/inkrtech/thirdparty/result"
 	"github.com/inkrtech/thirdparty/utils"
 	"strconv"
@@ -20,6 +22,8 @@ func NewAuthWxWechat(conf *AuthConfig) *AuthWxWechat {
 	authRequest.TokenUrl = "https://api.weixin.qq.com/sns/oauth2/access_token"
 	authRequest.RefreshTokenUrl = "https://api.weixin.qq.com/sns/oauth2/refresh_token"
 	authRequest.userInfoUrl = "https://api.weixin.qq.com/sns/userinfo"
+	authRequest.CgiUserInfoUrl = "https://api.weixin.qq.com/cgi-bin/user/info"
+	authRequest.CgiStableTokenUrl = "https://api.weixin.qq.com/cgi-bin/stable_token"
 
 	return authRequest
 }
@@ -167,4 +171,51 @@ func (a *AuthWxWechat) GetUserInfo(openId string, accessToken string) (*result.U
 		return nil, errors.New("获取用户信息失败！")
 	}
 	return user, nil
+}
+
+// 获取用户基本信息（包括UnionID机制）
+func (a *AuthWxWechat) GetCgiUserInfo(appid, secret, openId string) (map[string]string, error) {
+	stableToken, err := a.GetStableToken(appid, secret)
+	if err != nil {
+		return nil, err
+	}
+
+	url := utils.NewUrlBuilder(a.CgiUserInfoUrl).
+		AddParam("openid", openId).
+		AddParam("access_token", stableToken).
+		AddParam("lang", "zh_CN").
+		Build()
+
+	body, err := utils.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	m := utils.JsonToMSS(body)
+	if _, ok := m["errcode"]; ok {
+		return nil, errors.New(m["errmsg"])
+	}
+	return m, nil
+}
+
+func (a *AuthWxWechat) GetStableToken(appid, secret string) (string, error) {
+	url := utils.NewUrlBuilder(a.CgiStableTokenUrl).Build()
+	params := map[string]string{
+		"grant_type": "client_credential",
+		"appid":      appid,
+		"secret":     secret,
+	}
+	str, err := json.Marshal(params)
+	if err != nil {
+		return "", fmt.Errorf("marshal params failed, err: %v", err)
+	}
+
+	body, err := utils.Post(url, string(str))
+	m := utils.JsonToMSS(body)
+	if _, ok := m["errcode"]; ok {
+		return "", errors.New(m["errmsg"])
+	}
+	if m["access_token"] == "" {
+		return "", fmt.Errorf("get stable token failed, err: %v", err)
+	}
+	return m["access_token"], err
 }

@@ -1,14 +1,21 @@
 package utils
 
 import (
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 )
 
-func Post(url string) (string, error) {
+func Post(url string, param ...string) (string, error) {
+	var reqBody io.Reader
+	if len(param) > 0 {
+		reqBody = strings.NewReader(param[0])
+	}
+
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequest("POST", url, reqBody)
 	if err != nil {
 		log.Println(err)
 		return "", err
